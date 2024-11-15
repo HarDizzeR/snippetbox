@@ -1,103 +1,105 @@
 package main
 
 import (
-    "database/sql"
+	"crypto/tls"
+	"database/sql"
 	"flag"
-	"net/http"
+	"html/template"
 	"log/slog"
-    "html/template"
+	"net/http"
 	"os"
-    "time"
-    "crypto/tls"
+	"time"
 
-    "snippetbox.minaasaad.net/internal/models"
+	"snippetbox.minaasaad.net/internal/models"
 
-    "github.com/alexedwards/scs/v2"
-    "github.com/alexedwards/scs/mysqlstore"
-    "github.com/go-playground/form/v4"
-    _ "github.com/go-sql-driver/mysql"
+	"github.com/alexedwards/scs/mysqlstore"
+	"github.com/alexedwards/scs/v2"
+	"github.com/go-playground/form/v4"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 type application struct {
-    logger *slog.Logger
-    snippets *models.SnippetModel
-    templateCache map[string]*template.Template
-    formDecoder   *form.Decoder
-    sessionManager *scs.SessionManager
-    users *models.UserModel
+	debug          bool
+	logger         *slog.Logger
+	snippets       *models.SnippetModel
+	templateCache  map[string]*template.Template
+	formDecoder    *form.Decoder
+	sessionManager *scs.SessionManager
+	users          *models.UserModel
 }
 
-
 func main() {
-    addr := flag.String("addr", ":4000", "HTTP network address")
-    dsn := flag.String("dsn", "web:1234@/snippetbox?parseTime=true", "MySQL data source name")
-    flag.Parse()
+	addr := flag.String("addr", ":4000", "HTTP network address")
+	dsn := flag.String("dsn", "web:1234@/snippetbox?parseTime=true", "MySQL data source name")
+	debug := flag.Bool("debug", false, "Enable debug mode")
+	flag.Parse()
 
-    logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-    db, err := openDB(*dsn)
-    if err != nil {
-        logger.Error(err.Error())
-        os.Exit(1)
-    }
+	db, err := openDB(*dsn)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
 
-    defer db.Close()
+	defer db.Close()
 
-    templateCache, err := newTemplateCache()
-    if err != nil {
-        logger.Error(err.Error())
-        os.Exit(1)
-    }
+	templateCache, err := newTemplateCache()
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
 
-    formDecoder := form.NewDecoder()
+	formDecoder := form.NewDecoder()
 
-    sessionManager := scs.New()
-    sessionManager.Store = mysqlstore.New(db)
-    sessionManager.Lifetime = 12 * time.Hour
+	sessionManager := scs.New()
+	sessionManager.Store = mysqlstore.New(db)
+	sessionManager.Lifetime = 12 * time.Hour
 
-    app := &application{
-        logger: logger,
-        snippets: &models.SnippetModel{DB: db},
-        users: &models.UserModel{DB: db},
-        templateCache: templateCache,
-        formDecoder: formDecoder,
-        sessionManager: sessionManager,
-    }
+	app := &application{
+		logger:         logger,
+		snippets:       &models.SnippetModel{DB: db},
+		users:          &models.UserModel{DB: db},
+		templateCache:  templateCache,
+		formDecoder:    formDecoder,
+		sessionManager: sessionManager,
+		debug:          *debug,
+	}
 
-    tlsConfig := &tls.Config{
-        CurvePreferences: []tls.CurveID{
-            tls.X25519,tls.CurveP256,
-        },
-    }
+	tlsConfig := &tls.Config{
+		CurvePreferences: []tls.CurveID{
+			tls.X25519, tls.CurveP256,
+		},
+	}
 
-    srv := &http.Server{
-        Addr: *addr,
-        Handler: app.routes(),
-        ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
-        TLSConfig: tlsConfig,
-        IdleTimeout: time.Minute,
-        ReadTimeout: 5 * time.Second,
-        WriteTimeout: 10 * time.Second,
-    }
+	srv := &http.Server{
+		Addr:         *addr,
+		Handler:      app.routes(),
+		ErrorLog:     slog.NewLogLogger(logger.Handler(), slog.LevelError),
+		TLSConfig:    tlsConfig,
+		IdleTimeout:  time.Minute,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 10 * time.Second,
+	}
 
-    logger.Info("starting server", "addr", *addr)
-    
-    err = srv.ListenAndServeTLS("./security/cert.pem", "./security/key.pem")
-    logger.Error(err.Error())
-    os.Exit(1)
+	logger.Info("starting server", "addr", *addr)
+
+	err = srv.ListenAndServeTLS("./security/cert.pem", "./security/key.pem")
+	logger.Error(err.Error())
+	os.Exit(1)
 }
 
 func openDB(dsn string) (*sql.DB, error) {
-    db, err := sql.Open("mysql", dsn)
-    if err != nil {
-        return nil, err
-    }
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return nil, err
+	}
 
-    err = db.Ping()
-    if err != nil {
-        db.Close()
-        return nil, err
-    }
+	err = db.Ping()
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
 
-    return db, nil
+	return db, nil
 }
