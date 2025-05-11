@@ -30,19 +30,26 @@ type application struct {
 
 func main() {
 	addr := flag.String("addr", ":4000", "HTTP network address")
-	dsn := flag.String("dsn", "web:1234@/snippetbox?parseTime=true", "MySQL data source name")
+	dsn := os.Getenv("DSN")
 	debug := flag.Bool("debug", false, "Enable debug mode")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	db, err := openDB(*dsn)
+	db, err := openDB(dsn)
 	if err != nil {
 		logger.Error(err.Error())
 		os.Exit(1)
 	}
 
 	defer db.Close()
+
+	// Initialize database schema if necessary
+	err = models.InitDB(db)
+	if err != nil {
+		logger.Error("Failed to initialize database schema:", err.Error())
+		os.Exit(1)
+	}
 
 	templateCache, err := newTemplateCache()
 	if err != nil {
@@ -74,7 +81,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:         *addr,
-		Handler:      app.routes(),
+		Handler:      app.Routes(),
 		ErrorLog:     slog.NewLogLogger(logger.Handler(), slog.LevelError),
 		TLSConfig:    tlsConfig,
 		IdleTimeout:  time.Minute,
