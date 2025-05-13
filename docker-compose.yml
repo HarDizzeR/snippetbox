@@ -33,11 +33,6 @@ services:
       - "3306:3306"
     volumes:
       - db_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpass"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
 
 volumes:
   db_data:
